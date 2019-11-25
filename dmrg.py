@@ -1,8 +1,49 @@
 # - *- coding: utf- 8 - *-
 import numpy as np
 
-
 class OGDMRG:
+
+    def kernel(self, max_bond=16, max_iter=100, verbosity=2):
+        """Execution of the DMRG algorithm.
+
+        Args:
+            max_bond: The bond dimension to use for DMRG. The algorithm can choose
+            a bond dimension larger than the one specified to avoid truncating
+            between renormalized states degenerate in their singular values.
+
+            max_iter: The maximal iterations to use in the DMRG algorithm.
+
+            verbosity: 0: Don't print anything.
+                       1: Print results for the optimization.
+                       2: Print intermediate result at every even chain length.
+        """
+        from scipy.sparse.linalg import eigsh, LinearOperator
+
+        for i in range(0, max_iter, 2):
+            # even/odd chain length
+            for j in range(2):
+                H = LinearOperator(((self.bond * self.p) ** 2,) * 2,
+                                   matvec=lambda x: self.Heff(x))
+                # Diagonalize
+                w, v = eigsh(H, k=1, which='SA')
+                # Renormalize the basis
+                trunc = self.renormalize_basis(v[:, 0], max_bond)
+                # Update the effective Hamiltonian
+                self.update_Heff()
+
+            # Energy difference between this and the previous even-length chain
+            E = (w[0] - self.Etot) / 4
+            ΔE, self.E, self.Etot = self.E - E, E, w[0]
+
+            if verbosity >= 2:
+                print(f"it {i}:\tM: {self.bond},\tE: {self.E:.12f},\t"
+                      f"ΔE: {ΔE:.3g},\ttrunc: {trunc:.3g}")
+        if verbosity >= 1:
+            print(f"M: {self.bond},\tE: {self.E:.12f},\t"
+                  f"ΔE: {ΔE:.3g},\ttrunc: {trunc:.3g}")
+
+        return self.E
+
     """
     Attributes:
         NN_interaction: The Nearest neighbour interaction for the hamiltonian
@@ -10,7 +51,7 @@ class OGDMRG:
         E: The current energy per site
         Etot: The current total energy of the system
     """
-    def __init__(self, NN_interaction=None, multipl=2):
+    def __init__(self, NN_interaction=None, multi=2):
         """Initializes the OGDMRG object.
 
         Args:
@@ -20,25 +61,25 @@ class OGDMRG:
             For more information how the passed NN interaction should be
             structured, see the HeisenbergInteraction function.
 
-            multipl: If NN_interaction is not None, this argument is ignored.
+            multi: If NN_interaction is not None, this argument is ignored.
             If NN_interaction is None, this argument specifies the multiplicity
             of each spin for the Heisenberg interaction.
 
-            E.g. For `multipl = 2`, we work with spin-1/2.
-                 For `multipl = 3`, we work with spin-1.
+            E.g. For `multi = 2`, we work with spin-1/2.
+                 For `multi = 3`, we work with spin-1.
         """
         if NN_interaction is None:
-            self.NN_interaction = OGDMRG.HeisenbergInteraction(multipl)
+            self.NN_interaction = OGDMRG.HeisenbergInteraction(multi)
         else:
             self.NN_interaction = NN_interaction
 
         self.A = np.ones((1, 1))
-        self.HA = np.zeros((self.M, self.p, self.M, self.p))
+        self.HA = np.zeros((self.bond, self.p, self.bond, self.p))
         self.E = 0
         self.Etot = 0
 
     @property
-    def M(self):
+    def bond(self):
         """The current bond dimension used for DMRG.
 
         It is equal to the last dimension of the current A tensor.
@@ -54,52 +95,33 @@ class OGDMRG:
 
     @property
     def A(self):
-        """The current A-tensor.
-
-        Internally it is stored as a deque of a certain length. The current
-        A-tensor is the first element of the deque, previous A-tensors are the
-        other elements of the deque.
-
-        NOTE: The deque is usefull for later when gauge fixing works.
-        """
-        return self._A_deque[0]
+        """The current A-tensor."""
+        return self._A
 
     @A.setter
     def A(self, A):
-        from collections import deque
-        # A deque is also initialized so to keep track of previous A's
-        try:
-            self._A_deque.appendleft(A)
-        except AttributeError:
-            # The deque is not initialized yet
-            self._A_deque = deque(A, maxlen=3)
+        self._A = A
 
-    @property
-    def gaugeDiff(self):
-        """For later once the gauge fixing works...
-        """
-        raise ValueError
-
-    def S_operators(multipl=2):
+    def S_operators(multi=2):
         """Returns the S+, S-, and Sz operators for a given spin multiplicity.
 
         The operators are represented in the Sz basis: (-j, -j + 1, ..., j)
 
         Args:
-            multipl: defines which multiplicity the total spin of the site has.
-            Thus specifies j as `j = (multipl - 1) / 2`
+            multi: defines which multiplicity the total spin of the site has.
+            Thus specifies j as `j = (multi - 1) / 2`
         """
-        j = (multipl - 1) / 2
+        j = (multi - 1) / 2
         # magnetic quantum number for eacht basis state in the local basis
-        m = np.arange(multipl) - j
+        m = np.arange(multi) - j
 
         Sz = np.diag(m)
         Sp = np.zeros(Sz.shape)
-        Sp[range(1, multipl), range(0, multipl - 1)] = \
+        Sp[range(1, multi), range(0, multi - 1)] = \
             np.sqrt((j - m) * (j + m + 1))[:-1]
         return Sz, Sp, Sp.T
 
-    def HeisenbergInteraction(multipl=2):
+    def HeisenbergInteraction(multi=2):
         """Returns Heisenberg interaction between two sites.
 
         This is given by:
@@ -108,9 +130,9 @@ class OGDMRG:
         Interaction is given in a dense matrix:
             Σ H_{1', 2', 1, 2} |1'〉|2'〉〈1|〈2|
         """
-        Sz, Sp, Sm = OGDMRG.S_operators(multipl)
+        Sz, Sp, Sm = OGDMRG.S_operators(multi)
         H = 0.5 * (np.kron(Sp, Sm) + np.kron(Sm, Sp)) + np.kron(Sz, Sz)
-        return H.reshape((multipl,) * 4)
+        return H.reshape((multi,) * 4)
 
     def Heff(self, x):
         """Executing the Effective Hamiltonian on the two-site object `x`.
@@ -122,118 +144,57 @@ class OGDMRG:
 
         Returns H_A * x.
         """
-        x = x.reshape(self.M * self.p, -1)
+        x = x.reshape(self.bond * self.p, -1)
         # Interactions between left environment and left site
-        result = self.HA.reshape(self.M * self.p, -1) @ x
+        result = self.HA.reshape(self.bond * self.p, -1) @ x
         # Interactions between right environment and right site
-        result += x @ self.HA.reshape(self.M * self.p, -1).T
+        result += x @ self.HA.reshape(self.bond * self.p, -1).T
         # Interactions between left and right site
-        x = x.reshape(self.M, self.p, self.M, self.p)
-        result = result.reshape(self.M, self.p, self.M, self.p)
+        x = x.reshape(self.bond, self.p, self.bond, self.p)
+        result = result.reshape(self.bond, self.p, self.bond, self.p)
         result += np.einsum('xyij,lirj->lxry', self.NN_interaction, x)
 
         return result.ravel()
-
-    def renormalize_basis(self, A2, D, tol=1e-10):
-        """Renormalize the basis.
-        """
-        from numpy.linalg import svd, qr
-
-        u, s, v = svd(A2.reshape((self.M * self.p, self.M * self.p)))
-        svd_diff = (s[:-1] - s[1:]) / s[:-1]
-
-        # Array with Trues every time this singular value is different than the
-        # previous one (up to a tolerance)
-        new_sval = np.concatenate(
-            ([0], np.where(svd_diff > tol)[0] + 1, [len(s)])
-        )
-
-        # Truncating renormalized basis
-        #
-        # The kept basis states can be larger than the ones specified by the
-        # user, we just try not to cut up degenerate singular values.
-        lastmultiplet = -1 if new_sval[-1] < D else np.argmax(new_sval >= D)
-        D = new_sval[lastmultiplet]
-        u = u[:, :D]
-
-        # Trying to fix the gauge
-        #
-        # TODO: Does not seem to work yet?
-        for begin, end in zip(new_sval[:lastmultiplet], new_sval[1:]):
-            U = qr(u[:, begin:end].T, mode='r').T
-
-            # First nonzero element in each column
-            fnz = U[np.argmin(np.isclose(U, 0), axis=0), range(U.shape[1])]
-            U = U * (1 - 2 * (fnz < 0))[None, :]
-            u[:, begin:end] = U
-
-        self.A = u.reshape((self.M, self.p, -1))
-        return s[D:] @ s[D:]
 
     def update_Heff(self):
         """
         Update the effective Hamiltonian for the new renormalized basis.
         """
-        Mp = self.A.shape[0] * self.A.shape[1]
+        dim = self.A.shape[0] * self.A.shape[1]
 
-        A = self.A.reshape(Mp, -1)
-        tH = A.T @ self.HA.reshape(Mp, Mp) @ A
+        A = self.A.reshape(dim, -1)
+        tH = A.T @ self.HA.reshape(dim, dim) @ A
         self.HA = np.kron(tH, np.eye(self.p))
-        self.HA = self.HA.reshape(self.M, self.p, self.M, self.p)
+        self.HA = self.HA.reshape(self.bond, self.p, self.bond, self.p)
 
-        A = self.A.reshape(-1, self.p * self.M)
-        B = (A.T @ A).reshape(self.p, self.M, self.p, self.M)
+        A = self.A.reshape(-1, self.p * self.bond)
+        B = (A.T @ A).reshape(self.p, self.bond, self.p, self.bond)
         self.HA += np.einsum('ibjc,ikjl->bkcl', B, self.NN_interaction)
 
-    def kernel(self, D=16, max_iter=100, verbosity=2):
-        """Execution of the DMRG algorithm.
-
-        Args:
-            D: The bond dimension to use for DMRG. The algorithm can choose
-            a bond dimension larger than the one specified to avoid truncating
-            between renormalized states degenerate in their singular values.
-
-            max_iter: The maximal iterations to use in the DMRG algorithm.
-
-            verbosity: 0: Don't print anything.
-                       1: Print results for the optimization.
-                       2: Print intermediate result at every even chain length.
+    def renormalize_basis(self, A2, max_bond, tol=1e-10):
+        """Renormalize the basis.
         """
-        from scipy.sparse.linalg import eigsh, LinearOperator
+        from numpy.linalg import svd, qr
 
-        for i in range(0, max_iter, 2):
-            # even/odd chain length
-            for j in range(2):
-                H = LinearOperator(((self.M * self.p) ** 2,) * 2,
-                                   matvec=lambda x: self.Heff(x))
-                # Diagonalize
-                w, v = eigsh(H, k=1)
-                # Renormalize the basis
-                trunc = self.renormalize_basis(v[:, 0], D)
-                # Update the effective Hamiltonian
-                self.update_Heff()
+        u, s, v = svd(A2.reshape((self.bond * self.p, self.bond * self.p)))
 
-            # Energy difference between this and the previous even-length chain
-            E = (w[0] - self.Etot) / 4
-            ΔE, self.E, self.Etot = self.E - E, E, w[0]
+        # Truncating renormalized basis
+        if len(s) > max_bond:
+            cut = max_bond
+        else:
+            cut = len(s)
+        u = u[:,:cut]
 
-            if verbosity >= 2:
-                print(f"it {i}:\tM: {self.M},\tE: {self.E:.12f},\t"
-                      f"ΔE: {ΔE:.3g},\ttrunc: {trunc:.3g}")
-        if verbosity >= 1:
-            print(f"M: {self.M},\tE: {self.E:.12f},\t"
-                  f"ΔE: {ΔE:.3g},\ttrunc: {trunc:.3g}")
-
-        return self.E
-
+        self.A = u.reshape((self.bond, self.p, -1))
+        return s[cut:] @ s[cut:]
 
 if __name__ == '__main__':
     from sys import argv
     if len(argv) > 1:
-        D = [int(d) for d in argv[1:]]
+        max_bond = [int(d) for d in argv[1:]]
     else:
-        D = [64]
+        max_bond = [16]
 
     ogdmrg = OGDMRG()
-    for d in D:
-        ogdmrg.kernel(D=d)
+    for d in max_bond:
+        ogdmrg.kernel(max_bond=d)

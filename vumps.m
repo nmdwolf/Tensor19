@@ -1,9 +1,17 @@
-function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
+%   Variables:
+%       * multi: Spin multiplicity of every site
+%       * max_bond: Maximum bond dimension of the states
+%       * max_iter: Maximum number of iterations for the algorithm
+%       * verbosity:
+%            0: Don't print anything.
+%            1: Print results for the optimization.
+%            2: Print intermediate result at every even chain length.
+function VUMPS(multi, max_bond, max_iter, tol, verbosity, canon)
 
     % All global variables: Mixed orthonormal tensors, dimensions and environments
     [al, ar, ac, c] = deal(0, 0, 0, 0);
     [Hl, Hr, H] = deal(0, 0, 0);
-    [p, M] = deal(0, bond);
+    [p, bond] = deal(0, max_bond);
 
     function n=Norm(x)
         % Helper function to compute Frobenius norms.
@@ -82,47 +90,62 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         H = reshape(H, multi, multi, multi, multi);
     end
 
+    function H=four_site(h)
+        % Transforms the two site interaction to an equivalent four-site
+        % interaction such that we can do `two site` optimization which is actually
+        % four sites in a time.
+
+        dim = size(h, 1);
+        id = eye(dim * dim);
+        h = reshape(h, dim * dim, []);
+        h2 = 0.5 * reshape(kron(h, id), dim * dim, dim * dim, dim * dim, dim * dim);
+        h2 = h2 + 0.5 * reshape(kron(id, h), dim * dim, dim * dim, dim * dim, dim * dim);
+        id = eye(dim);
+        htemp = reshape(kron(id, h), dim * dim * dim, dim * dim * dim);
+        H = (h2 + reshape(kron(htemp, id), dim * dim, dim * dim, dim * dim, dim * dim)) / 2;
+    end
+
     function result=H_2site(AA)
         % Executes the nearest neighbour interaction on a two-site tensor
-        result = zeros(M, p * p, M);
-        AA = reshape(AA, M, p * p, M);
+        result = zeros(bond, p * p, bond);
+        AA = reshape(AA, bond, p * p, bond);
         NN = reshape(H, p * p, []);
 
-        for i=1:M
+        for i=1:bond
             result(i,:,:) = NN * squeeze(AA(i,:,:));
         end
     end
 
     function result=HAc(x)
-        res = Hl * reshape(x, M, []);
+        res = Hl * reshape(x, bond, []);
         result = res(:);
-        res = reshape(x, [], M) * Hr.';
+        res = reshape(x, [], bond) * Hr.';
         result = result + res(:);
 
-        LL = reshape(Al(), [], M) * reshape(x, M, []);
+        LL = reshape(Al(), [], bond) * reshape(x, bond, []);
         LL = H_2site(LL);
 
-        res = reshape(Al(), M * p, [])' * reshape(LL, M * p, []);
+        res = reshape(Al(), bond * p, [])' * reshape(LL, bond * p, []);
         result = result + res(:);
 
-        RR = reshape(x, [], M) * reshape(Ar(), M, []);
+        RR = reshape(x, [], bond) * reshape(Ar(), bond, []);
         RR = H_2site(RR);
 
-        res = reshape(RR, [], M * p) * reshape(Ar(), [], M * p)';
+        res = reshape(RR, [], bond * p) * reshape(Ar(), [], bond * p)';
         result = result + res(:);
     end
 
     function result=Hc(x)
-        x = reshape(x, M, M);
+        x = reshape(x, bond, bond);
         res = Hl * x;
         res2 = x * Hr.';
         result = res(:) + res2(:);
 
-        C1 = reshape(Al(), [], M) * x * reshape(Ar(), M, []);
+        C1 = reshape(Al(), [], bond) * x * reshape(Ar(), bond, []);
         C1 = H_2site(C1);
 
-        C3 = reshape(C1, [], M * p) * reshape(Ar(), [], M * p)';
-        res = reshape(Al(), M * p, [])' * reshape(C3, M * p, []);
+        C3 = reshape(C1, [], bond * p) * reshape(Ar(), [], bond * p)';
+        res = reshape(Al(), bond * p, [])' * reshape(C3, bond * p, []);
         result = result + res(:);
     end
 
@@ -134,30 +157,30 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         function result=P_NullSpace(x)
             % Projecting x on the nullspace of 1 - T
 
-            x = reshape(x, M, M);
-            result = trace(C' * x * C) * eye(M);
+            x = reshape(x, bond, bond);
+            result = trace(C' * x * C) * eye(bond);
         end
 
         function result=Transfer(x)
             % Doing (1 - (T - P)) @ x
 
-            x = reshape(x, M, M);
+            x = reshape(x, bond, bond);
             result = x(:);
             res = P_NullSpace(x);
             result = result + res(:);
-            tmp = x * reshape(A, M, []);
-            res = reshape(A, [], M)' * reshape(tmp, [], M);
+            tmp = x * reshape(A, bond, []);
+            res = reshape(A, [], bond)' * reshape(tmp, [], bond);
             result = result - res(:);
         end
 
-        AA = reshape(A, [], M) * reshape(A, M, []);
+        AA = reshape(A, [], bond) * reshape(A, bond, []);
         HAA = H_2site(AA);
-        h = reshape(AA, [], M)' * reshape(HAA, [], M);
+        h = reshape(AA, [], bond)' * reshape(HAA, [], bond);
 
         temp = h - P_NullSpace(h);
         [r, info] = bicgstab(@Transfer, temp(:));
 
-        r = reshape(r, M, M);
+        r = reshape(r, bond, bond);
         result = r - P_NullSpace(r);
     end
 
@@ -178,21 +201,6 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         result = conj(result);
     end
 
-    function H=four_site(h)
-        % Transforms the two site interaction to an equivalent four-site
-        % interaction such that we can do `two site` optimization which is actually
-        % four sites in a time.
-
-        pd = size(h, 1);
-        id = eye(pd * pd);
-        h = reshape(h, pd * pd, []);
-        h2 = 0.5 * reshape(kron(h, id), pd * pd, pd * pd, pd * pd, pd * pd);
-        h2 = h2 + 0.5 * reshape(kron(id, h), pd * pd, pd * pd, pd * pd, pd * pd);
-        id = eye(pd);
-        htemp = reshape(kron(id, h), pd * pd * pd, pd * pd * pd);
-        H = (h2 + reshape(kron(htemp, id), pd * pd, pd * pd, pd * pd, pd * pd)) / 2;
-    end
-
     function [energy, error]=current_energy_and_error()
         % Calculates the energy and estimated error of the current uMPS
         %
@@ -206,7 +214,7 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         Hcc = Hc(C());
         c_ = C();
         energy = real(dot(c_(:),Hcc));
-        AlHcc = reshape(Al(), [], M) * reshape(Hcc, M, []);
+        AlHcc = reshape(Al(), [], bond) * reshape(Hcc, bond, []);
         error = Norm(HAcAc - 2 * AlHcc(:)) / (2 * abs(energy));
     end
 
@@ -216,34 +224,34 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         end
 
         A = AR;
-        c = eye(M);
+        c = eye(bond);
 
         diff = 1;
         iterations = 1;
 
         function result=Transfer(x)
-            xA = reshape(x, M, M) * reshape(A, M, []);
-            result = reshape(A, [], M)' * reshape(xA, [], M);
+            xA = reshape(x, bond, bond) * reshape(A, bond, []);
+            result = reshape(A, [], bond)' * reshape(xA, [], bond);
             result = result(:);
         end
 
         while diff > tol
             iterations = iterations + 1;
-            [w, d] = eigs(@Transfer, M * M);
-            [u, s, v] = svd(reshape(w(:, 1), M, M));
+            [w, d] = eigs(@Transfer, bond * bond);
+            [u, s, v] = svd(reshape(w(:, 1), bond, bond));
             sqrt_eps = sqrt(eps(1.0));
             s = diag(s);
             s(:) = max(sqrt(s(:)), sqrt_eps);
             s = s / Norm(s);
             c1 = diag(s) * v';
             c1_inv = v * diag(s.^(-1));
-            A = c1 * reshape(A, M, []);
-            A = reshape(A, [], M) * c1_inv;
-            A = (A / Norm(A)) * sqrt(M);
+            A = c1 * reshape(A, bond, []);
+            A = reshape(A, [], bond) * c1_inv;
+            A = (A / Norm(A)) * sqrt(bond);
 
             c = c1 * c;
             c = c / Norm(c);
-            diff = Norm(reshape(w(:, 1), M, M) - eye(M) * w(1));
+            diff = Norm(reshape(w(:, 1), bond, bond) - eye(bond) * w(1));
         end
         c = c / Norm(c);
         info = [iterations, diff];
@@ -251,17 +259,17 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
 
     function info=set_uMPS(AC, C_in, canon, tol)
         if canon
-            [uar, ~] = poldec2(reshape(AC, M, []));
-            [ucr, ~] = poldec2(reshape(C_in, M, M));
+            [uar, ~] = poldec2(reshape(AC, bond, []));
+            [ucr, ~] = poldec2(reshape(C_in, bond, bond));
             ar = ucr' *  uar;
             [al, c, info] = MakeCanonical(Ar(), C_in, tol);
-            ac = C() * reshape(Ar(), M, []);
+            ac = C() * reshape(Ar(), bond, []);
         else
             c = C_in;
-            [uar, ~] = poldec2(reshape(AC, M, []));
-            [ucr, ~] = poldec2(reshape(C, M, M));
-            [ual, ~] = poldec(reshape(AC, [], M));
-            [ucl, ~] = poldec(reshape(C, M, M));
+            [uar, ~] = poldec2(reshape(AC, bond, []));
+            [ucr, ~] = poldec2(reshape(C, bond, bond));
+            [ual, ~] = poldec(reshape(AC, [], bond));
+            [ucl, ~] = poldec(reshape(C, bond, bond));
             ar = ual * ucl';
             al = ucr' * uar;
             info = [0];
@@ -269,19 +277,19 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
     end
 
     function A=Ar()
-        A = reshape(ar, M, p, M);
+        A = reshape(ar, bond, p, bond);
     end
 
     function A=Al()
-        A = reshape(al, M, p, M);
+        A = reshape(al, bond, p, bond);
     end
 
     function C=C()
-        C = reshape(c, M, M);
+        C = reshape(c, bond, bond);
     end
 
     function A=Ac()
-        A = reshape(ac, M, p, M);
+        A = reshape(ac, bond, p, bond);
     end
 
     function print_info(i, energy, error, ctol, w1, w2, canon_info)
@@ -293,8 +301,8 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
 %     H = IsingInteraction(multi);
     p = size(H, 1);
 
-    ac = randn(M * p * M, 1);
-    c = randn(M * M, 1);
+    ac = randn(bond * p * bond, 1);
+    c = randn(bond * bond, 1);
     ac = ac / Norm(ac);
     c = c / Norm(c);
 

@@ -1,5 +1,15 @@
 using LinearAlgebra, KrylovKit
 
+#=
+   Variables:
+       * multi: Spin multiplicity of every site
+       * max_bond: Maximum bond dimension of the states
+       * max_iter: Maximum number of iterations for the algorithm
+       * verbosity:
+            0: Don't print anything.
+            1: Print results for the optimization.
+            2: Print intermediate result at every even chain length.
+=#
 function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e-10, verbosity::Integer=2, canon::Bool=true)
 
     #=
@@ -13,7 +23,7 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
         #=
         Helper function to compute adjoints of multi-dimensional arrays.
         =#
-        
+
         return conj(permutedims(A, reverse(1:length(size(A)))))
     end
 
