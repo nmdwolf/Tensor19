@@ -6,5 +6,5 @@ To get the code to work you will need to install two packages (but we expect eve
 
 ## For the people using Julia:
 
-To get the code to work you will need to add one package (this one is used for Krylov space-based iterative solvers):
+To get the code to work you will need to add one package (this one is used for Krylov-based algorithms):
 * KrylovKit
