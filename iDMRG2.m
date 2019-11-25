@@ -1,5 +1,3 @@
-% We only look at spin-1/2 particles.
-% 
 % verbosity: 0: Don't print anything.
 %            1: Print results for the optimization.
 %            2: Print intermediate result at every even chain length.

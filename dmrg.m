@@ -1,11 +1,10 @@
-% We only look at spin-1/2 particles.
-% 
 % verbosity: 0: Don't print anything.
 %            1: Print results for the optimization.
 %            2: Print intermediate result at every even chain length.
-function E=iDMRG2(multi, bond, max_iter, verbosity)
+function E=dmrg(multi, bond, max_iter, verbosity)
 
     H = HeisenbergInteraction(multi);
+    H = IsingInteraction(multi);
     p = size(H, 1);
 
     A = eye(1);
@@ -53,9 +52,6 @@ function E=iDMRG2(multi, bond, max_iter, verbosity)
     function x=ApplyHeff(A)
         A = reshape(A, chi * p, []);
         
-%         A = reshape(A, chi, p, chi, p);
-%         x = ncon({L{end}, A},{[-1 -2 2 1],[2 1 -3 -4]});
-%         x = x + ncon({A, conj(L{end})},{[-1 -2 1 2],[-3 -4 1 2]});
         env_ = reshape(L{end}, chi * p, []);
         x = env_ * A + A * env_';
         x = reshape(x, chi, p, chi, p);
@@ -63,7 +59,6 @@ function E=iDMRG2(multi, bond, max_iter, verbosity)
         A = permute(reshape(A, chi, p, chi, p), [1 3 2 4]);
         h = reshape(A, chi*chi, []) * permute(reshape(H, p*p, p*p), [2 1]);
         x = x + permute(reshape(h, chi, chi, p, p), [1 3 2 4]);
-%         x = x + ncon({H, A},{[-2 -4 1 2],[-1 1 -3 2]});
 
         x = x(:);
     end
@@ -75,18 +70,15 @@ function E=iDMRG2(multi, bond, max_iter, verbosity)
         env = A_' * reshape(L{end}, Mp, Mp) * A_;
         env = kron(eye(p), env);
         env = reshape(env, chi, p, chi, p);
-%         env = ncon({L{end}, A, conj(A), eye(p)},{[1 2 3 4],[3 4 -3],[1 2 -1],[-2 -4]});
         
         A = reshape(A, [], p*chi);
         B = reshape(A' * A, p, chi, p, chi);
         B = reshape(permute(B, [2 4 1 3]), chi*chi, p*p);
         h = reshape(permute(H, [1 3 2 4]), p*p, p*p);
         env = env + permute(reshape(B * h, chi, chi, p, p), [1 3 2 4]);
-%         B = ncon({conj(A),A},{[1 -2 -1],[1 -4 -3]});
-%         env = env + ncon({B, H},{[-1 1 -3 2],[1 -2 2 -4]});
     end
 
-    function [z,pl,mn]=S_op(multi)
+    function [z,pl,mn]=S_operators(multi)
     
         if nargin==0
             j = 1/2;
@@ -109,9 +101,31 @@ function E=iDMRG2(multi, bond, max_iter, verbosity)
         if nargin==0
             multi = 2;
         end
-        [Sz, Sp, Sm] = S_op(multi);
+        [Sz, Sp, Sm] = S_operators(multi);
         
         H = 0.5 * (kron(Sp, Sm) + kron(Sm, Sp)) + kron(Sz, Sz);
         H = reshape(H,multi,multi,multi,multi); 
+    end
+
+    function H=IsingInteraction(multi, J)
+        % Returns Ising interaction between two sites.
+        %
+        % This is given by:
+        %    1/2 * (S_1^+  + S_1^- + S_2^+ + S_2^-) + J * S_1^z S_2^z
+        %
+        % Interaction is given in a dense matrix:
+        %    Σ H_{1', 2', 1, 6} |1'〉|2'〉〈1|〈2|
+        
+        if nargin == 0
+            J = 4;
+            multi = 2;
+        elseif nargin == 1
+            J = 4;
+        end
+
+        [Sz, Sp, Sm] = S_operators(multi);
+        unity = eye(size(Sz, 1));
+        H = 0.5 * (kron(Sp, unity) + kron(Sm, unity) + kron(unity, Sp) + kron(unity, Sm)) + J * kron(Sz, Sz);
+        H = reshape(H, multi, multi, multi, multi);
     end
 end
