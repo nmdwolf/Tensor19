@@ -7,9 +7,12 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
 
     function n=Norm(x)
         % Helper function to compute Frobenius norms.
-        n=norm(x, 'fro'); 
+        % This method was added because the standard norm() method in MatLab
+        % computes the infinity-norm (maximal singular value) instead of the 2-norm.
+
+        n=norm(x, 'fro');
     end
-    
+
     function A=dagger(A)
         % Helper function to compute adjoints of multi-dimensional arrays.
         A = conj(permute(A, flip(1:length(size(A)))));
@@ -35,7 +38,7 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         Sp = zeros(length(m));
         temp = sqrt((j - m) .* (j + m + 1));
         Sp(2:(multi+1):end) = temp(1:end-1);
-        
+
         Sm = Sp.';
     end
 
@@ -47,11 +50,11 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         %
         % Interaction is given in a dense matrix:
         %    Σ H_{1', 2', 1, 2} |1'〉|2'〉〈1|〈2|
-        
+
         if nargin == 0
             multi = 2;
         end
-        
+
         [Sz, Sp, Sm] = S_operators(multi);
         H = 0.5 * (kron(Sp, Sm) + kron(Sm, Sp)) + kron(Sz, Sz);
         H = reshape(H, multi, multi, multi, multi);
@@ -65,7 +68,7 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         %
         % Interaction is given in a dense matrix:
         %    Σ H_{1', 2', 1, 2} |1'〉|2'〉〈1|〈2|
-        
+
         if nargin == 0
             J = 4;
             multi = 2;
@@ -127,10 +130,10 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         if nargin == 2
             tol = 1e-14;
         end
-        
+
         function result=P_NullSpace(x)
             % Projecting x on the nullspace of 1 - T
-            
+
             x = reshape(x, M, M);
             result = trace(C' * x * C) * eye(M);
         end
@@ -150,7 +153,7 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         AA = reshape(A, [], M) * reshape(A, M, []);
         HAA = H_2site(AA);
         h = reshape(AA, [], M)' * reshape(HAA, [], M);
-        
+
         temp = h - P_NullSpace(h);
         [r, info] = bicgstab(@Transfer, temp(:));
 
@@ -211,19 +214,19 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         if nargin == 2
             tol = 1e-14;
         end
-        
+
         A = AR;
         c = eye(M);
 
         diff = 1;
         iterations = 1;
-        
+
         function result=Transfer(x)
             xA = reshape(x, M, M) * reshape(A, M, []);
             result = reshape(A, [], M)' * reshape(xA, [], M);
             result = result(:);
         end
-        
+
         while diff > tol
             iterations = iterations + 1;
             [w, d] = eigs(@Transfer, M * M);
@@ -250,7 +253,7 @@ function VUMPS(multi, bond, max_iter, tol, verbosity, canon)
         if canon
             [uar, ~] = poldec2(reshape(AC, M, []));
             [ucr, ~] = poldec2(reshape(C_in, M, M));
-            ar = ucr' *  uar;            
+            ar = ucr' *  uar;
             [al, c, info] = MakeCanonical(Ar(), C_in, tol);
             ac = C() * reshape(Ar(), M, []);
         else

@@ -10,6 +10,10 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
     p, chi = 0, bond
 
     function dagger(A)
+        #=
+        Helper function to compute adjoints of multi-dimensional arrays.
+        =#
+        
         return conj(permutedims(A, reverse(1:length(size(A)))))
     end
 
