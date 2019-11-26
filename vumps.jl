@@ -10,20 +10,26 @@ using LinearAlgebra, KrylovKit
             1: Print results for the optimization.
             2: Print intermediate result at every even chain length.
 =#
-function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e-14, verbosity::Integer=2, canon::Bool=true)
+function VUMPS(multi::Integer=2, max_bond::Integer=16, max_iter::Integer=100, tol=1e-10, verbosity::Integer=2, canon::Bool=true)
 
     #=
     All global variables: Mixed orthonormal tensors, dimensions, environments and temporary info
     =#
     al, ar, ac, c = 0, 0, 0, 0
     Hl, Hr, H = 0, 0, 0
-    p, chi = 0, bond
+    p, bond = 0, max_bond
     energy, error = 0, 0
 
+    function poldec(A)
+        # Helper function calculating the polar decomposition in terms of the SVD.
+
+        m, n = size(A)
+        F = svd(A)
+        U = F.U * F.Vt
+    end
+
     function dagger(A)
-        #=
-        Helper function to compute adjoints of multi-dimensional arrays.
-        =#
+        # Helper function to compute adjoints of multi-dimensional arrays.
 
         return conj(permutedims(A, reverse(1:length(size(A)))))
     end
@@ -65,11 +71,11 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
         #=
         Executes the nearest neighbour interaction on a two-site tensor
         =#
-        result = Array{ComplexF64}(undef,chi, p * p, chi)
-        AA = reshape(AA, chi, p * p, chi)
+        result = Array{ComplexF64}(undef,bond, p * p, bond)
+        AA = reshape(AA, bond, p * p, bond)
         NN = reshape(H, p * p, :)
 
-        for i in 1:chi
+        for i in 1:bond
             result[i,:,:] = NN * AA[i,:,:]
         end
 
@@ -77,31 +83,31 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
     end
 
     function HAc(x)
-        result = vec(Hl * reshape(x, chi, :))
-        result += vec(reshape(x, :, chi) * transpose(Hr))
+        result = vec(Hl * reshape(x, bond, :))
+        result += vec(reshape(x, :, bond) * transpose(Hr))
 
-        LL = reshape(Al(), :, chi) * reshape(x, chi, :)
+        LL = reshape(Al(), :, bond) * reshape(x, bond, :)
         LL = H_2site(LL)
 
-        result += vec(adjoint(reshape(Al(), chi * p, :)) * reshape(LL, chi * p, :))
+        result += vec(adjoint(reshape(Al(), bond * p, :)) * reshape(LL, bond * p, :))
 
-        RR = reshape(x, :, chi) * reshape(Ar(), chi, :)
+        RR = reshape(x, :, bond) * reshape(Ar(), bond, :)
         RR = H_2site(RR)
 
-        result += vec(reshape(RR, :, chi * p) * adjoint(reshape(Ar(), :, chi * p)))
+        result += vec(reshape(RR, :, bond * p) * adjoint(reshape(Ar(), :, bond * p)))
         return result
     end
 
     function Hc(x)
-        x = reshape(x, chi, chi)
+        x = reshape(x, bond, bond)
         result = vec(Hl * x)
         result += vec(x * transpose(Hr))
 
-        C1 = reshape(Al(), :, chi) * x * reshape(Ar(), chi, :)
+        C1 = reshape(Al(), :, bond) * x * reshape(Ar(), bond, :)
         C1 = H_2site(C1)
 
-        C3 = reshape(C1, :, chi * p) * adjoint(reshape(Ar(), :, chi * p))
-        result += vec(adjoint(reshape(Al(), chi * p, :)) * reshape(C3, chi * p, :))
+        C3 = reshape(C1, :, bond * p) * adjoint(reshape(Ar(), :, bond * p))
+        result += vec(adjoint(reshape(Al(), bond * p, :)) * reshape(C3, bond * p, :))
         return result
     end
 
@@ -110,31 +116,31 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
             #=
             Projecting x on the nullspace of 1 - T
             =#
-            x = reshape(x, chi, chi)
-            return tr(adjoint(C) * x * C) * Diagonal(ones(chi))
+            x = reshape(x, bond, bond)
+            return tr(adjoint(C) * x * C) * Diagonal(ones(bond))
         end
 
         function Transfer(x)
             #=
             Doing (1 - (T - P)) @ x
             =#
-            x = reshape(x, chi, chi)
+            x = reshape(x, bond, bond)
             res = vec(deepcopy(x))
             res += vec(P_NullSpace(x))
-            temp = x * reshape(A, chi, :)
-            res -= vec(adjoint(reshape(A, :, chi)) * reshape(temp, :, chi))
+            temp = x * reshape(A, bond, :)
+            res -= vec(adjoint(reshape(A, :, bond)) * reshape(temp, :, bond))
 
             return res
         end
 
-        AA = reshape(A, :, chi) * reshape(A, chi, :)
+        AA = reshape(A, :, bond) * reshape(A, bond, :)
         HAA = H_2site(AA)
 
-        h = adjoint(reshape(AA, :, chi)) * reshape(HAA, :, chi)
+        h = adjoint(reshape(AA, :, bond)) * reshape(HAA, :, bond)
 
-        r, info = linsolve(Transfer, vec(h - P_NullSpace(h)))
+        r, info = linsolve(Transfer, vec(h - P_NullSpace(h)), tol=tol)
 
-        r = reshape(r, chi, chi)
+        r = reshape(r, bond, bond)
         r - P_NullSpace(r), info
     end
 
@@ -184,60 +190,52 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
         HAcAc = HAc(Ac())
         Hcc = Hc(C())
         E = real(dot(vec(C()),Hcc))
-        AlHcc = vec(reshape(Al(), :, chi) * reshape(Hcc, chi, :))
+        AlHcc = vec(reshape(Al(), :, bond) * reshape(Hcc, bond, :))
         E, norm(HAcAc - 2 * AlHcc) / (2 * abs(E))
     end
 
     function MakeCanonical(AR, C_in, tol=1e-14)
         A = deepcopy(AR)
-        c = Diagonal(ones(chi))
+        c = Diagonal(ones(bond))
 
         diff = 1
         iterations = 1
         while diff > tol
             function Transfer(x)
-                xA = reshape(x, chi, chi) * reshape(A, chi, :)
-                return vec(adjoint(reshape(A, :, chi)) * reshape(xA, :, chi))
+                xA = reshape(x, bond, bond) * reshape(A, bond, :)
+                return vec(adjoint(reshape(A, :, bond)) * reshape(xA, :, bond))
             end
             iterations += 1
-            d, w = eigsolve(Transfer, chi * chi, 1)
-            F = svd(reshape(w[1], chi, chi))
+            d, w = eigsolve(Transfer, bond * bond, 1, tol=tol)
+            F = svd(reshape(w[1], bond, bond))
             sqrt_eps = sqrt(eps(1.0))
             s = max.(sqrt.(F.S), sqrt_eps)
             s = s / norm(s)
             c1 = Diagonal(s) * F.Vt
             c1_inv = F.V * (Diagonal(s)^(-1))
-            A = c1 * reshape(A, chi, :)
-            A = reshape(A, :, chi) * c1_inv
-            A = (A / norm(A)) * sqrt(chi)
+            A = c1 * reshape(A, bond, :)
+            A = reshape(A, :, bond) * c1_inv
+            A = (A / norm(A)) * sqrt(bond)
 
             c = c1 * c
             c = c / norm(c)
-            diff = norm(reshape(w[1], chi, chi) - Diagonal(ones(chi)) * w[1][1])
+            diff = norm(reshape(w[1], bond, bond) - Diagonal(ones(bond)) * w[1][1])
         end
         A, c / norm(c), [iterations, diff]
     end
 
     function set_uMPS(AC, C_in, canon::Bool=true, tol=1e-14)
         if canon
-            F = svd(reshape(AC, chi, :))
-            uar = F.U * F.Vt
-            F = svd(reshape(C_in, chi, chi))
-            ucr = F.U * F.Vt
+            uar = poldec(reshape(AC, bond, :))
+            ucr = poldec(reshape(C_in, bond, bond))
             ar = adjoint(ucr) *  uar
             al, c, info = MakeCanonical(Ar(), C_in, tol)
-            ac = C() * reshape(Ar(), chi, :)
+            ac = C() * reshape(Ar(), bond, :)
         else
-            c = C
-            F = svd(reshape(AC, chi, :))
-            uar = F.U * F.Vt
-            F = svd(reshape(C, chi, chi))
-            ucr = F.U * F.Vt
-            F = svd(reshape(AC, :, chi))
-            ual = F.U * F.Vt
-            F = svd(reshape(C, chi, chi))
-            ucl = F.U * F.Vt
-            ar = ual * adjoint(ucl)
+            c = C_in
+            uar = poldec(reshape(AC, bond, :))
+            ucr = poldec(reshape(C, bond, bond))
+            ar = uar * adjoint(ucr)
             al = adjoint(ucr) * uar
             info = [0]
         end
@@ -245,31 +243,31 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
     end
 
     function Ar()
-        return reshape(ar, chi, p, chi)
+        return reshape(ar, bond, p, bond)
     end
 
     function Al()
-        return reshape(al, chi, p, chi)
+        return reshape(al, bond, p, bond)
     end
 
     function C()
-        return reshape(c, chi, chi)
+        return reshape(c, bond, bond)
     end
 
     function Ac()
-        return reshape(ac, chi, p, chi)
+        return reshape(ac, bond, p, bond)
     end
 
     function print_info(i, energy, error, ctol, canon_info)
-        println("Iter: ", i, " E: ", energy, " Error: ", error, "tol: ", ctol, " c_its: ", canon_info)
+        println("Iter: ", i, " E: ", energy, " Error: ", error, " tol: ", ctol, " c_its: ", canon_info)
         # println("Iter: ", i, " E: ", energy, " Error: ", error)
     end
 
     H = four_site(HeisenbergInteraction(multi))
     p = size(H, 1)
 
-    ac = randn(ComplexF64, chi, p, chi)
-    c = randn(ComplexF64, chi, chi)
+    ac = randn(ComplexF64, bond, p, bond)
+    c = randn(ComplexF64, bond, bond)
     ac = ac / norm(ac)
     c = c / norm(c)
 
@@ -282,11 +280,6 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
 
     for i in 1:max_iter
         ctol = max(min(1e-3, 1e-3 * error), 1e-15)
-        if ctol ^ 2 > 1e-16
-            etol = ctol ^ 2
-        else
-            etol = 0
-        end
 
         d1, w1, ~ = eigsolve(HAc, vec(Ac()), 1, :SR)
         d2, w2, ~ = eigsolve(Hc, vec(C()), 1, :SR)
