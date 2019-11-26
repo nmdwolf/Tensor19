@@ -27,3 +27,7 @@ To get the code to work you will need to add one package (this one is used for K
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;2
 
 In this notation the horizontal legs are the auxiliary bonds and have the dimension 'bond' in the code, the vertical legs are the physical degrees of freedom and have the dimension 'p' in the code.
+
+
+# Importtant remark:
+Certain convergence issues might appear in the different languages. This might be related to the convergence measures which are used. One shouldn't pay to much attention to this. The code is not meant to represent a perfectly polished implementation of the algorithms.
