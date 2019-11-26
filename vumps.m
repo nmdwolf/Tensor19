@@ -6,13 +6,21 @@
 %            0: Don't print anything.
 %            1: Print results for the optimization.
 %            2: Print intermediate result at every even chain length.
-function VUMPS(multi, max_bond, max_iter, tol, verbosity, canon)
+function vumps(multi, max_bond, max_iter, tol, verbosity, canon)
 
     % All global variables: Mixed orthonormal tensors, dimensions and environments
     [al, ar, ac, c] = deal(0, 0, 0, 0);
     [Hl, Hr, H] = deal(0, 0, 0);
     [p, bond] = deal(0, max_bond);
 
+    function U = poldec(A)
+	% Helper function calculating the polar decomposition in terms of the SVD.
+
+        [m, n] = size(A);
+        [P, S, Q] = svd(A, 'econ');  % Economy size.
+        U = P*Q';
+    end
+    
     function n=Norm(x)
         % Helper function to compute Frobenius norms.
         % This method was added because the standard norm() method in MatLab
@@ -259,19 +267,17 @@ function VUMPS(multi, max_bond, max_iter, tol, verbosity, canon)
 
     function info=set_uMPS(AC, C_in, canon, tol)
         if canon
-            [uar, ~] = poldec2(reshape(AC, bond, []));
-            [ucr, ~] = poldec2(reshape(C_in, bond, bond));
+            uar = poldec(reshape(AC, bond, []));
+            ucr = poldec(reshape(C_in, bond, bond));
             ar = ucr' *  uar;
             [al, c, info] = MakeCanonical(Ar(), C_in, tol);
             ac = C() * reshape(Ar(), bond, []);
         else
             c = C_in;
-            [uar, ~] = poldec2(reshape(AC, bond, []));
-            [ucr, ~] = poldec2(reshape(C, bond, bond));
-            [ual, ~] = poldec(reshape(AC, [], bond));
-            [ucl, ~] = poldec(reshape(C, bond, bond));
-            ar = ual * ucl';
-            al = ucr' * uar;
+            ua = poldec(reshape(AC, bond, []));
+            uc = poldec(reshape(C, bond, bond));
+            ar = ua * uc';
+            al = uc' * ua;
             info = [0];
         end
     end
@@ -298,7 +304,6 @@ function VUMPS(multi, max_bond, max_iter, tol, verbosity, canon)
     end
 
     H = four_site(HeisenbergInteraction(multi));
-%     H = IsingInteraction(multi);
     p = size(H, 1);
 
     ac = randn(bond * p * bond, 1);

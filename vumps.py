@@ -396,6 +396,5 @@ if __name__ == '__main__':
         max_bond = [16]
 
     vumps = VUMPS(NN_interaction=four_site(HeisenbergInteraction()))
-    # vumps = VUMPS(NN_interaction=IsingInteraction())
     for d in max_bond:
         vumps.kernel(max_bond=d, max_iter=100, canon=True)

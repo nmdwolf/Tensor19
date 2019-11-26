@@ -266,7 +266,6 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
     end
 
     H = four_site(HeisenbergInteraction(multi))
-    # H = IsingInteraction(multi)
     p = size(H, 1)
 
     ac = randn(ComplexF64, chi, p, chi)
