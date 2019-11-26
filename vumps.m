@@ -15,8 +15,7 @@ function vumps(multi, max_bond, max_iter, tol, verbosity, canon)
 
     function U = poldec(A)
 	% Helper function calculating the polar decomposition in terms of the SVD.
-
-        [m, n] = size(A);
+	
         [P, S, Q] = svd(A, 'econ');  % Economy size.
         U = P*Q';
     end
