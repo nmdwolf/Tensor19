@@ -24,7 +24,6 @@ def MakeCanonical(Ar, c_in=None, tol=1e-14, dtype=np.float64):
             dtype=dtype
         )
         w, v = eigs(LO, k=1, which='LM')
-
         U, s, Vh = svd(v[:, 0].reshape(bond, bond))
         sqrt_eps = np.sqrt(np.finfo(dtype).eps)
         s = np.array([max(np.sqrt(st), sqrt_eps) for st in s])
@@ -38,9 +37,6 @@ def MakeCanonical(Ar, c_in=None, tol=1e-14, dtype=np.float64):
         c = c1 @ c
         c = c / norm(c)
         diff = norm(v[:, 0].reshape(bond, bond) - np.eye(bond) * v.flatten()[0])
-    assert np.isclose(
-        norm(A.reshape(-1, bond).conj().T @ A.reshape(-1, bond) - np.eye(bond)), 0
-    )
     return A, c / norm(c), (iterations, diff)
 
 

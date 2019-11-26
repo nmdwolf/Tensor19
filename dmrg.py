@@ -171,7 +171,7 @@ class OGDMRG:
         B = (A.T @ A).reshape(self.p, self.bond, self.p, self.bond)
         self.HA += np.einsum('ibjc,ikjl->bkcl', B, self.NN_interaction)
 
-    def renormalize_basis(self, A2, max_bond, tol=1e-10):
+    def renormalize_basis(self, A2, D, tol=1e-10):
         """Renormalize the basis.
         """
         from numpy.linalg import svd, qr
@@ -179,8 +179,8 @@ class OGDMRG:
         u, s, v = svd(A2.reshape((self.bond * self.p, self.bond * self.p)))
 
         # Truncating renormalized basis
-        if len(s) > max_bond:
-            cut = max_bond
+        if len(s) > D:
+            cut = D
         else:
             cut = len(s)
         u = u[:,:cut]

@@ -10,14 +10,15 @@ using LinearAlgebra, KrylovKit
             1: Print results for the optimization.
             2: Print intermediate result at every even chain length.
 =#
-function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e-10, verbosity::Integer=2, canon::Bool=true)
+function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e-14, verbosity::Integer=2, canon::Bool=true)
 
     #=
-    All global variables: Mixed orthonormal tensors, dimensions and environments
+    All global variables: Mixed orthonormal tensors, dimensions, environments and temporary info
     =#
     al, ar, ac, c = 0, 0, 0, 0
     Hl, Hr, H = 0, 0, 0
     p, chi = 0, bond
+    energy, error = 0, 0
 
     function dagger(A)
         #=
@@ -198,9 +199,8 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
                 xA = reshape(x, chi, chi) * reshape(A, chi, :)
                 return vec(adjoint(reshape(A, :, chi)) * reshape(xA, :, chi))
             end
-
             iterations += 1
-            d, w = eigsolve(Transfer, chi * chi)
+            d, w = eigsolve(Transfer, chi * chi, 1)
             F = svd(reshape(w[1], chi, chi))
             sqrt_eps = sqrt(eps(1.0))
             s = max.(sqrt.(F.S), sqrt_eps)
@@ -260,12 +260,13 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
         return reshape(ac, chi, p, chi)
     end
 
-    function print_info(i, energy, error, ctol, w1, w2, canon_info)
-        # println("Iter: ", i, " E: ", energy, " Error: ", error, "tol: ", ctol, " HAc: ", w1, " Hc: ", w2, " c_its: ", canon_info)
-        println("Iter: ", i, " E: ", energy, " Error: ", error)
+    function print_info(i, energy, error, ctol, canon_info)
+        println("Iter: ", i, " E: ", energy, " Error: ", error, "tol: ", ctol, " c_its: ", canon_info)
+        # println("Iter: ", i, " E: ", energy, " Error: ", error)
     end
 
     H = four_site(HeisenbergInteraction(multi))
+    # H = IsingInteraction(multi)
     p = size(H, 1)
 
     ac = randn(ComplexF64, chi, p, chi)
@@ -297,19 +298,18 @@ function VUMPS(multi::Integer=2, bond::Integer=16, max_iter::Integer=100, tol=1e
         energy, error = current_energy_and_error()
 
         if error < tol
+            println("Algorithm converged:")
             break
         end
 
         if verbosity >= 2
-            print_info(i, energy, error, ctol, d1[1], d2[1], canon_info[1])
+            print_info(i, energy, error, ctol, canon_info[1])
         end
     end
 
     if verbosity >= 1
-        print_info(i, energy, error, ctol, d1[1], d2[1], canon_info[1])
+        println("Final values: E: ", energy, " Error: ", error)
     end
 end
 
-#=
-VUMPS()
-=#
+# VUMPS()
