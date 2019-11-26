@@ -23,7 +23,6 @@ function VUMPS(multi::Integer=2, max_bond::Integer=16, max_iter::Integer=100, to
     function poldec(A)
         # Helper function calculating the polar decomposition in terms of the SVD.
 
-        m, n = size(A)
         F = svd(A)
         U = F.U * F.Vt
     end
